@@ -295,6 +295,27 @@ predicate; fallback: a dedicated prepare path or a distinct launch type). Preser
 **Verify:** F5/debug of a `DotnetProjectResource` (no watch) from a C# app host and the Aspire VS Code extension;
 debug behavior matches `AddProject`. *Depends on: 1.* **(R1)**
 
+**Status: ✅ Complete** — commit `2e7ed53c5`. Implemented the annotation/metadata-driven predicate (R1's
+preferred option). Core `Aspire.Hosting` changes: (1) `Dcp/ExecutableCreator.CreateObjectAsync` now applies the
+`"project"` `ProjectLaunchConfiguration` — with launch-profile defaults (`launch_profile`/`disable_launch_profile`/
+`mode`) — for a **plain executable** (non-`ProjectResource`) that carries `IProjectMetadata` + a `"project"`
+`SupportsDebuggingAnnotation`; the project-launch helpers (`ApplyProjectLaunchConfiguration`,
+`CreateProjectLaunchConfiguration`, `ApplyProjectLaunchConfigurationDefaults`) were generalized from
+`ProjectResource` to `IResource`. (2) `PreparePlainExecutables` supplies `dotnet run --file …` process-fallback
+args for file-based `.cs` apps (best-effort for IDEs — e.g. Visual Studio — that reject `.cs` `"project"`
+launches; `.csproj` needs none because DCP process-runs it from `project_path`). (3)
+`Dcp/ResourceSnapshotBuilder.ToSnapshot` renders such executables as a **Project** (project path + effective
+launch profile) for dashboard parity. Package change: `AddDotnetProject` omits the `dotnet run` scaffolding when
+the IDE owns the launch (`SupportsDebugging` true), so the debugger receives only the user's args (mirrors the
+Go/Python IDE-args seam). The **VS Code extension needed no changes** — its dotnet debugger keys purely off the
+`"project"` launch type + `project_path` (both `.cs` and `.csproj`). No new public API; all surface stays
+`[Experimental]`; no generated `api/*` edits. Tests: core DCP executor tests (IDE execution + `ProjectLaunchConfiguration`
++ launch-profile resolution + `DebugSessionRunMode` + Process fallback when `"project"` unsupported + file-based
+fallback args) via a package-independent fake, package arg-shaping tests (annotator output; IDE strip vs. keep),
+and a `ToSnapshot`-renders-as-Project test. `./build.sh` clean; `DcpExecutorTests`/`ResourceSnapshotBuilderTests`
+(195) + `ProjectResourceTests` (39) + `DotnetProjectResourceTests` (12) green. *(watch-mode debugging remains out
+of scope — see Session 9 limitations.)*
+
 ### Session 3 — Core run sub-mode state (minimal, no mechanics)
 Add `IsWatch`/`RunSubMode` to `DistributedApplicationExecutionContext(+Options)`; populate from a CLI config
 key in `DistributedApplicationBuilder` (mirror `Publishing:Publisher`). No watch logic in core. **Verify:**
@@ -360,7 +381,8 @@ limitations (no watch-debug, no partial runs yet), `ASPIREDOTNETPROJECT001`. *De
                       ▲           ▲
                       └─ (4,5) ───┘
 ```
-Session 1 (✅ complete) is the root. Sessions 1b (✅ complete), 2, 4, 5 parallelize after 1; session 3 is independent.
+Session 1 (✅ complete) is the root. Sessions 1b (✅ complete) and 2 (✅ complete) are done; sessions 4, 5
+parallelize after 1; session 3 is independent.
 Service watch (6) needs 3+4+5; CLI `--watch` (7) needs 6+3; app-host watch (8) needs 7+4; tests/docs (9) last.
 Session 1b (the playground dogfood harness) is extended by session 9.
 
