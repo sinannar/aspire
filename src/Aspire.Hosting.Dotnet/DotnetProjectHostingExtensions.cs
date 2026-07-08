@@ -133,6 +133,18 @@ public static class DotnetProjectHostingExtensions
         //   dotnet run --file <app.cs> --no-cache [--no-build] [--configuration <cfg>] --no-launch-profile
         resource.WithArgs(ctx =>
         {
+            // When a debugger/IDE owns the launch (the "project" SupportsDebuggingAnnotation is honored by the
+            // active IDE), DCP applies a ProjectLaunchConfiguration (project_path + launch profile) and the IDE
+            // launches the project itself. Emitting the `dotnet run …` scaffolding here would be handed to the
+            // IDE as the debugged program's invocation arguments (see docs/specs/IDE-execution.md — request
+            // args replace the launch profile's args), so skip it in that case. The user's own args (added via
+            // their own WithArgs callbacks) still flow through. For file-based `.cs` apps the DCP layer supplies
+            // `dotnet run --file` process-fallback args for IDEs that reject `.cs` "project" launches.
+            if (ctx.Resource.SupportsDebugging(builder.Configuration, out _))
+            {
+                return;
+            }
+
             IProjectMetadata metadata = projectMetadata;
 
             ctx.Args.Add("run");

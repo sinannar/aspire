@@ -85,6 +85,34 @@ public class ResourceSnapshotBuilderTests
     }
 
     [Fact]
+    public void ExecutableWithProjectMetadataSnapshotRendersAsProject()
+    {
+        // A plain ExecutableResource that carries IProjectMetadata (e.g. DotnetProjectResource, an
+        // ExecutableResource launched via `dotnet run --project`) should render like a project in the
+        // dashboard — with the project path + launch profile — for parity with AddProject.
+        var resource = new TestDotnetProjectResource("proj");
+        resource.Annotations.Add(new TestProjectMetadata());
+        resource.Annotations.Add(new LaunchProfileAnnotation("https"));
+
+        var executable = Executable.Create("proj", "dotnet");
+        executable.Annotate(DcpCustomResource.ResourceNameAnnotation, resource.Name);
+        executable.Spec.WorkingDirectory = "/app";
+        executable.Status = new ExecutableStatus
+        {
+            EffectiveArgs = ["run"],
+            ProcessId = 1234
+        };
+
+        var snapshot = CreateSnapshotBuilder(new Dictionary<string, IResource>
+        {
+            [resource.Name] = resource
+        }).ToSnapshot(executable, CreatePreviousSnapshot());
+
+        AssertHighlightedProperty(snapshot, KnownProperties.Project.Path, "Project path", isSensitive: false, sortOrder: 0);
+        AssertHighlightedProperty(snapshot, KnownProperties.Project.LaunchProfile, "Launch profile", isSensitive: false, sortOrder: 1);
+    }
+
+    [Fact]
     public void ExecutableSnapshotPreservesLaunchArgumentSensitivityWhenUsingEffectiveArgs()
     {
         var executable = CreateExecutable(
@@ -248,4 +276,6 @@ public class ResourceSnapshotBuilderTests
             }
         };
     }
+
+    private sealed class TestDotnetProjectResource(string name) : ExecutableResource(name, "dotnet", "/app");
 }

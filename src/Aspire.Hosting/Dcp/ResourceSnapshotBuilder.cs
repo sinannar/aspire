@@ -142,6 +142,14 @@ internal class ResourceSnapshotBuilder
                 projectPath = projectResource.GetProjectMetadata().ProjectPath;
                 launchProfileName = projectResource.GetEffectiveLaunchProfile()?.Name;
             }
+            else if (appModelResource.TryGetLastAnnotation<IProjectMetadata>(out var projectMetadata))
+            {
+                // Plain executables that carry project metadata (e.g. DotnetProjectResource, an
+                // ExecutableResource launched via `dotnet run --project`) render like a project in the
+                // dashboard — with the project path and effective launch profile — for parity with AddProject.
+                projectPath = projectMetadata.ProjectPath;
+                launchProfileName = appModelResource.GetEffectiveLaunchProfile()?.Name;
+            }
         }
 
         var state = executable.AppModelInitialState is "Hidden" ? "Hidden" : executable.Status?.State;
