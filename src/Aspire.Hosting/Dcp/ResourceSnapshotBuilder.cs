@@ -144,9 +144,7 @@ internal class ResourceSnapshotBuilder
             }
             else if (appModelResource.TryGetLastAnnotation<IProjectMetadata>(out var projectMetadata))
             {
-                // Plain executables that carry project metadata (e.g. DotnetProjectResource, an
-                // ExecutableResource launched via `dotnet run --project`) render like a project in the
-                // dashboard — with the project path and effective launch profile — for parity with AddProject.
+                // New-style, annotation-based C# service (DotnetProjectResource)
                 projectPath = projectMetadata.ProjectPath;
                 launchProfileName = appModelResource.GetEffectiveLaunchProfile()?.Name;
             }

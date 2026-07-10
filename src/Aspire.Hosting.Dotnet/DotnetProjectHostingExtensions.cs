@@ -126,22 +126,14 @@ public static class DotnetProjectHostingExtensions
                               .WithDebugSupport(mode => new ProjectLaunchConfiguration { ProjectPath = projectMetadata.ProjectPath, Mode = mode }, "project")
                               .WithProjectDefaults(options);
 
-        // Build the `dotnet run` command line. This mirrors the ExecutionType.Process path in
-        // Dcp/ExecutableCreator.PrepareProjectExecutables() so a non-debug launch of a DotnetProjectResource
-        // (now an ExecutableResource, not a ProjectResource) matches how AddProject launches today:
-        //   dotnet run --project <proj> [--no-build] [--configuration <cfg>] --no-launch-profile
+        // Build the `dotnet run` command line for a non-debug launch of a DotnetProjectResource:
+        //   dotnet run --project <proj> [--no-build] [--configuration <cfg>] --no-launch-profile OR
         //   dotnet run --file <app.cs> --no-cache [--no-build] [--configuration <cfg>] --no-launch-profile
         resource.WithArgs(ctx =>
         {
-            // When a debugger/IDE owns the launch (the "project" SupportsDebuggingAnnotation is honored by the
-            // active IDE), DCP applies a ProjectLaunchConfiguration (project_path + launch profile) and the IDE
-            // launches the project itself. Emitting the `dotnet run …` scaffolding here would be handed to the
-            // IDE as the debugged program's invocation arguments (see docs/specs/IDE-execution.md — request
-            // args replace the launch profile's args), so skip it in that case. The user's own args (added via
-            // their own WithArgs callbacks) still flow through. For file-based `.cs` apps the DCP layer supplies
-            // `dotnet run --file` process-fallback args for IDEs that reject `.cs` "project" launches.
             if (ctx.Resource.SupportsDebugging(builder.Configuration, out _))
             {
+                // This is a debug launch; startup will be handled by debug launch configuration.
                 return;
             }
 

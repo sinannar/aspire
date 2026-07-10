@@ -163,10 +163,9 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
         // available during PrepareExecutables().
         // "project" launch types on ProjectResources configure their launch configs in
         // PrepareProjectExecutables() directly. Plain executables that carry IProjectMetadata and a
-        // "project" SupportsDebuggingAnnotation (e.g. DotnetProjectResource, an ExecutableResource that
-        // launches `dotnet run --project`) are prepared as plain executables, so their "project" launch
-        // configuration is applied here for IDE/F5 parity with AddProject. All other types (plain
-        // executables and project subtypes like azure-functions) are also handled here.
+        // "project" SupportsDebuggingAnnotation (e.g. DotnetProjectResource) are prepared as plain executables, 
+        // so their "project" launch configuration is applied here for IDE/F5 parity with AddProject. 
+        // All other types (plain executables and project subtypes like azure-functions) are also handled here.
         if (!er.ModelResource.HasAnnotationOfType<ForceProcessExecutionAnnotation>()
             && er.ModelResource.SupportsDebugging(_configuration, out var supportsDebuggingAnnotation))
         {
@@ -179,9 +178,7 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
                 {
                     try
                     {
-                        // ApplyProjectLaunchConfiguration clears any existing launch config (restart scenarios),
-                        // runs the annotator, and applies launch-profile defaults so launch_profile/
-                        // disable_launch_profile/mode match AddProject.
+                        // Clear and re-apply the launch configuration to ensure proper restart behavior.
                         ApplyProjectLaunchConfiguration(exe, er.ModelResource, plainProjectMetadata, supportsDebuggingAnnotation);
                     }
                     catch (Exception ex)
@@ -193,6 +190,8 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
             }
             else
             {
+                // We have non-project Executable that supports debugging; need to annotate it properly.
+
                 var mode = _configuration[KnownConfigNames.DebugSessionRunMode] ?? ExecutableLaunchMode.NoDebug;
                 try
                 {
@@ -433,7 +432,7 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
 
             if (!persistent
                 && !executable.HasAnnotationOfType<ForceProcessExecutionAnnotation>()
-                && executable.SupportsDebugging(_configuration, out var plainSupportsDebugging))
+                && executable.SupportsDebugging(_configuration, out var supportsDebuggingAnnotation))
             {
                 // Just mark as IDE execution here - the actual launch configuration callback
                 // will be invoked in CreateExecutableAsync after endpoints are allocated.
@@ -446,23 +445,26 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
                 // ExecutionType.Process. Mirror the file-based handling in PrepareProjectExecutables() so the
                 // fallback launches with `dotnet run --file …`. A .csproj needs no explicit fallback args:
                 // DCP process-runs it from the launch config's project_path.
-                if (plainSupportsDebugging.LaunchConfigurationType is "project"
+                if (supportsDebuggingAnnotation.LaunchConfigurationType is "project"
                     && executable.TryGetLastAnnotation<IProjectMetadata>(out var plainProjectMetadata)
                     && plainProjectMetadata.IsFileBasedApp)
                 {
-                    var fallbackArgs = new List<string> { "run", "--file", plainProjectMetadata.ProjectPath, "--no-cache" };
+                    // This is new-style DotnetProjectResource that is file-based.
+                    // These need special treatment just like the older ProjectResource, i.e.
+                    // they require launch arguments supplied via ResourceProjectAnnotation.
+                    var projectArgs = new List<string> { "run", "--file", plainProjectMetadata.ProjectPath, "--no-cache" };
                     if (plainProjectMetadata.SuppressBuild)
                     {
-                        fallbackArgs.Add("--no-build");
+                        projectArgs.Add("--no-build");
                     }
-                    fallbackArgs.Add("--no-launch-profile");
+                    projectArgs.Add("--no-launch-profile");
                     if (!string.IsNullOrEmpty(_distributedApplicationOptions.Configuration))
                     {
-                        fallbackArgs.Add("--configuration");
-                        fallbackArgs.Add(_distributedApplicationOptions.Configuration);
+                        projectArgs.Add("--configuration");
+                        projectArgs.Add(_distributedApplicationOptions.Configuration);
                     }
 
-                    exe.SetAnnotationAsObjectList(CustomResource.ResourceProjectArgsAnnotation, fallbackArgs);
+                    exe.SetAnnotationAsObjectList(CustomResource.ResourceProjectArgsAnnotation, projectArgs);
                 }
             }
             else
@@ -813,10 +815,6 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
         return true;
     }
 
-    // Accepts IResource rather than ProjectResource: the "project" launch configuration is also applied to
-    // plain executables that carry IProjectMetadata (e.g. DotnetProjectResource, an ExecutableResource that
-    // launches `dotnet run --project`) so they reach IDE/F5 parity with AddProject. All members used here are
-    // available on IResource (Name, ExcludeLaunchProfileAnnotation, GetEffectiveLaunchProfile).
     private void ApplyProjectLaunchConfiguration(Executable exe, IResource project, IProjectMetadata projectMetadata, SupportsDebuggingAnnotation? supportsDebuggingAnnotation = null)
     {
         if (supportsDebuggingAnnotation?.LaunchConfigurationType is "project")

@@ -295,7 +295,7 @@ predicate; fallback: a dedicated prepare path or a distinct launch type). Preser
 **Verify:** F5/debug of a `DotnetProjectResource` (no watch) from a C# app host and the Aspire VS Code extension;
 debug behavior matches `AddProject`. *Depends on: 1.* **(R1)**
 
-**Status: ✅ Complete** — commit `2e7ed53c5`. Implemented the annotation/metadata-driven predicate (R1's
+**Status: ✅ Complete** — Implemented the annotation/metadata-driven predicate (R1's
 preferred option). Core `Aspire.Hosting` changes: (1) `Dcp/ExecutableCreator.CreateObjectAsync` now applies the
 `"project"` `ProjectLaunchConfiguration` — with launch-profile defaults (`launch_profile`/`disable_launch_profile`/
 `mode`) — for a **plain executable** (non-`ProjectResource`) that carries `IProjectMetadata` + a `"project"`
@@ -309,11 +309,11 @@ launch profile) for dashboard parity. Package change: `AddDotnetProject` omits t
 the IDE owns the launch (`SupportsDebugging` true), so the debugger receives only the user's args (mirrors the
 Go/Python IDE-args seam). The **VS Code extension needed no changes** — its dotnet debugger keys purely off the
 `"project"` launch type + `project_path` (both `.cs` and `.csproj`). No new public API; all surface stays
-`[Experimental]`; no generated `api/*` edits. Tests: core DCP executor tests (IDE execution + `ProjectLaunchConfiguration`
-+ launch-profile resolution + `DebugSessionRunMode` + Process fallback when `"project"` unsupported + file-based
-fallback args) via a package-independent fake, package arg-shaping tests (annotator output; IDE strip vs. keep),
-and a `ToSnapshot`-renders-as-Project test. `./build.sh` clean; `DcpExecutorTests`/`ResourceSnapshotBuilderTests`
-(195) + `ProjectResourceTests` (39) + `DotnetProjectResourceTests` (12) green. *(watch-mode debugging remains out
+`[Experimental]`; no generated `api/*` edits. 
+Tests: core DCP executor tests (IDE execution + `ProjectLaunchConfiguration`+ launch-profile resolution +
+ `DebugSessionRunMode` + Process fallback when `"project"` unsupported + file-based fallback args) 
+ via a package-independent fake, package arg-shaping tests (annotator output; IDE strip vs. keep),
+and a `ToSnapshot`-renders-as-Project test. *(Watch-mode debugging remains out
 of scope — see Session 9 limitations.)*
 
 ### Session 3 — Core run sub-mode state (minimal, no mechanics)
