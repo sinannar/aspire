@@ -176,16 +176,8 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
                 if (er.ModelResource is not ProjectResource
                     && er.ModelResource.TryGetLastAnnotation<IProjectMetadata>(out var plainProjectMetadata))
                 {
-                    try
-                    {
-                        // Clear and re-apply the launch configuration to ensure proper restart behavior.
-                        ApplyProjectLaunchConfiguration(exe, er.ModelResource, plainProjectMetadata, supportsDebuggingAnnotation);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to apply launch configuration for resource '{ResourceName}'. Falling back to process execution.", er.ModelResource.Name);
-                        exe.Spec.ExecutionType = ExecutionType.Process;
-                    }
+                    // Clear and re-apply the launch configuration to ensure proper restart behavior.
+                    ApplyProjectLaunchConfiguration(exe, er.ModelResource, plainProjectMetadata, supportsDebuggingAnnotation);
                 }
             }
             else
@@ -451,7 +443,7 @@ internal sealed class ExecutableCreator : IObjectCreator<Executable, EmptyCreati
                 {
                     // This is new-style DotnetProjectResource that is file-based.
                     // These need special treatment just like the older ProjectResource, i.e.
-                    // they require launch arguments supplied via ResourceProjectAnnotation.
+                    // they require launch arguments supplied via ResourceProjectArgAnnotation.
                     var projectArgs = new List<string> { "run", "--file", plainProjectMetadata.ProjectPath, "--no-cache" };
                     if (plainProjectMetadata.SuppressBuild)
                     {

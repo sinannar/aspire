@@ -5012,6 +5012,95 @@ public class DcpExecutorTests(ITestOutputHelper outputHelper)
         Assert.False(exe.TryGetProjectLaunchConfiguration(out _));
     }
 
+    [Fact]
+    public async Task DotnetProjectExecutable_PersistentLifetime_InDebugSession_RunsInProcessWithoutProjectLaunchConfig()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+
+        var resource = new TestDotnetProjectExecutableResource("test-working-directory");
+        builder.AddResource(resource)
+            .WithAnnotation(new TestProjectWithLaunchSettings())
+            .WithDebugSupport(mode => new ProjectLaunchConfiguration { ProjectPath = "TestProjectWithLaunchSettings", Mode = mode }, "project")
+            .WithPersistentLifetime();
+
+        var configDict = new Dictionary<string, string?>
+        {
+            ["AppHost:Sha256"] = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            [DcpExecutor.DebugSessionPortVar] = "12345",
+            [KnownConfigNames.DebugSessionInfo] = JsonSerializer.Serialize(new RunSessionInfo { ProtocolsSupported = ["test"], SupportedLaunchConfigurations = ["project"] }),
+            [KnownConfigNames.ExtensionEndpoint] = "http://localhost:1234"
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configDict).Build();
+
+        var kubernetesService = new TestKubernetesService();
+        using var app = builder.Build();
+        var distributedAppModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var appExecutor = CreateAppExecutor(distributedAppModel, kubernetesService: kubernetesService, configuration: configuration);
+
+        await appExecutor.RunApplicationAsync();
+
+        var exe = GetCreatedExecutableForResource(kubernetesService, "TestDotnetProject");
+        Assert.True(exe.Spec.Persistent);
+        Assert.Equal(ExecutionType.Process, exe.Spec.ExecutionType);
+        Assert.False(exe.TryGetProjectLaunchConfiguration(out _));
+    }
+
+    [Fact]
+    public async Task DotnetProjectExecutable_ProjectLaunchConfigurationFailure_FailsWithoutProcessFallback()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+
+        var resource = new TestDotnetProjectExecutableResource("test-working-directory");
+        builder.AddResource(resource)
+            .WithAnnotation(new TestProjectWithLaunchSettings())
+            .WithDebugSupport(CreateProjectLaunchConfiguration, "project");
+
+        var configDict = new Dictionary<string, string?>
+        {
+            [DcpExecutor.DebugSessionPortVar] = "12345",
+            [KnownConfigNames.DebugSessionInfo] = JsonSerializer.Serialize(new RunSessionInfo { ProtocolsSupported = ["test"], SupportedLaunchConfigurations = ["project"] }),
+            [KnownConfigNames.ExtensionEndpoint] = "http://localhost:1234"
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configDict).Build();
+
+        var kubernetesService = new TestKubernetesService();
+        using var resourceLoggerService = new ResourceLoggerService();
+        var failedResources = new List<IResource>();
+        var events = new DcpExecutorEvents();
+        events.Subscribe<OnResourceFailedToStartContext>(context =>
+        {
+            failedResources.Add(context.Resource);
+            return Task.CompletedTask;
+        });
+
+        using var app = builder.Build();
+        var distributedAppModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var appExecutor = CreateAppExecutor(
+            distributedAppModel,
+            kubernetesService: kubernetesService,
+            configuration: configuration,
+            resourceLoggerService: resourceLoggerService,
+            events: events);
+
+        await appExecutor.RunApplicationAsync();
+
+        Assert.Empty(kubernetesService.CreatedResources.OfType<Executable>());
+        Assert.Same(resource, Assert.Single(failedResources));
+
+        var logLines = new List<LogLine>();
+        await foreach (var lines in resourceLoggerService.GetAllAsync(resource).DefaultTimeout())
+        {
+            logLines.AddRange(lines);
+        }
+
+        Assert.Contains(logLines, line => line.Content.Contains("Project launch configuration failed.", StringComparison.Ordinal));
+
+        static ProjectLaunchConfiguration CreateProjectLaunchConfiguration(string mode)
+        {
+            throw new InvalidOperationException("Project launch configuration failed.");
+        }
+    }
+
     [Theory]
     [InlineData(ExecutableLaunchMode.Debug, ExecutableLaunchMode.Debug)]
     [InlineData(ExecutableLaunchMode.NoDebug, ExecutableLaunchMode.NoDebug)]

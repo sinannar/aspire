@@ -3,6 +3,7 @@
 
 #pragma warning disable ASPIREDOTNETPROJECT001
 #pragma warning disable ASPIREEXTENSION001
+#pragma warning disable ASPIREPERSISTENCE001
 
 using System.Text.Json;
 using Aspire.Hosting.ApplicationModel;
@@ -218,6 +219,52 @@ public class DotnetProjectResourceTests(ITestOutputHelper outputHelper)
         Assert.Equal("prod.yaml", args[^1]);
     }
 
+    [Theory]
+    [InlineData(PersistenceMode.Persistent)]
+    [InlineData(PersistenceMode.ParentProcess)]
+    [InlineData(PersistenceMode.Resource)]
+    public async Task AddDotnetProject_InDebugSession_EffectivePersistentLifetimeKeepsDotnetRunProjectArgs(PersistenceMode persistenceMode)
+    {
+        using var builder = TestDistributedApplicationBuilder.Create(DistributedApplicationOperation.Run);
+
+        builder.Configuration["DEBUG_SESSION_PORT"] = "5678";
+        builder.Configuration["DEBUG_SESSION_INFO"] = JsonSerializer.Serialize(new RunSessionInfo
+        {
+            ProtocolsSupported = ["test"],
+            SupportedLaunchConfigurations = ["project"]
+        });
+
+        var projectPath = Path.Combine(builder.AppHostDirectory, "MyService", "MyService.csproj");
+        var app = builder.AddDotnetProject("svc", projectPath, o => o.ExcludeLaunchProfile = true)
+                         .WithArgs("--config", "prod.yaml");
+
+        switch (persistenceMode)
+        {
+            case PersistenceMode.Persistent:
+                app.WithPersistentLifetime();
+                break;
+            case PersistenceMode.ParentProcess:
+                app.WithParentProcessLifetime(Environment.ProcessId);
+                break;
+            case PersistenceMode.Resource:
+                var source = builder.AddContainer("source", "image").WithPersistentLifetime();
+                app.WithLifetimeOf(source);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(persistenceMode), persistenceMode, null);
+        }
+
+        using var application = builder.Build();
+        var args = await ArgumentEvaluator.GetArgumentListAsync(app.Resource, application.Services);
+
+        Assert.Equal("run", args[0]);
+        Assert.Equal("--project", args[1]);
+        Assert.Equal(projectPath, args[2]);
+        Assert.Contains("--no-launch-profile", args);
+        Assert.Equal("--config", args[^2]);
+        Assert.Equal("prod.yaml", args[^1]);
+    }
+
     [Fact]
     public async Task AddDotnetProject_FileBasedApp_InDebugSession_OmitsDotnetRunScaffolding()
     {
@@ -238,5 +285,33 @@ public class DotnetProjectResourceTests(ITestOutputHelper outputHelper)
         var args = await ArgumentEvaluator.GetArgumentListAsync(app.Resource, application.Services);
 
         Assert.Collection(args, arg => Assert.Equal("--flag", arg));
+    }
+
+    [Fact]
+    public async Task AddDotnetProject_FileBasedApp_InDebugSession_PersistentLifetimeKeepsDotnetRunFileArgs()
+    {
+        using var builder = TestDistributedApplicationBuilder.Create(DistributedApplicationOperation.Run);
+
+        builder.Configuration["DEBUG_SESSION_PORT"] = "5678";
+        builder.Configuration["DEBUG_SESSION_INFO"] = JsonSerializer.Serialize(new RunSessionInfo
+        {
+            ProtocolsSupported = ["test"],
+            SupportedLaunchConfigurations = ["project"]
+        });
+
+        var appPath = Path.Combine(builder.AppHostDirectory, "service.cs");
+        var app = builder.AddDotnetProject("svc", appPath, o => o.ExcludeLaunchProfile = true)
+                         .WithArgs("--flag")
+                         .WithPersistentLifetime();
+
+        using var application = builder.Build();
+        var args = await ArgumentEvaluator.GetArgumentListAsync(app.Resource, application.Services);
+
+        Assert.Equal("run", args[0]);
+        Assert.Equal("--file", args[1]);
+        Assert.Equal(appPath, args[2]);
+        Assert.Equal("--no-cache", args[3]);
+        Assert.Contains("--no-launch-profile", args);
+        Assert.Equal("--flag", args[^1]);
     }
 }
